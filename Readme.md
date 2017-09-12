@@ -1,5 +1,6 @@
 # Scriptwars
-
+#
+# ∩༼˵☯‿☯˵༽つ¤=[]:::::>
 
 Author: Sidharth Mishra<sidmishraw@gmail.com>
 
