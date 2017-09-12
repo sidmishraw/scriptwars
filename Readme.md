@@ -2,11 +2,11 @@
 #
 # ∩༼˵☯‿☯˵༽つ¤=[]:::::>
 
-Author: Sidharth Mishra<sidmishraw@gmail.com>
+Author: Sidharth Mishra << sidmishraw@gmail.com >>
 
 
 
-##Motivation(?)
+## Motivation(?)
 
 Just for Fun! Jk
 To check out the ways we can stream/transport compute in distributed/multi-agent networks (?) 
