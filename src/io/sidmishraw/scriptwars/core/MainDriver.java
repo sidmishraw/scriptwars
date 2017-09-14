@@ -19,7 +19,9 @@ import java.net.InetSocketAddress;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.file.Paths;
+import java.util.Random;
 
+import javax.script.Invocable;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 import javax.script.ScriptException;
@@ -38,8 +40,14 @@ import sun.net.www.protocol.http.HttpURLConnection;
  */
 public class MainDriver {
 	
+	// js engine name
+	private static final String			NASHORN	= "nashorn";
+	
 	private static HttpServer			server	= null;
 	private static StandardLambdaObject	sObject	= null;
+	
+	// the agent
+	private static Agent				agent	= null;
 	
 	/**
 	 * Creates the serialized object
@@ -56,7 +64,7 @@ public class MainDriver {
 		StringBuffer scriptContentBuffer = new StringBuffer();
 		
 		try (BufferedReader bReader = new BufferedReader(
-				new InputStreamReader(new FileInputStream(Paths.get(jsFilePath).toFile())))) {
+		        new InputStreamReader(new FileInputStream(Paths.get(jsFilePath).toFile())))) {
 			
 			String line = null;
 			
@@ -80,9 +88,9 @@ public class MainDriver {
 	 *            the script to be executed
 	 * @throws ScriptException
 	 * 
-	 * @return the result of the evaluation
+	 * @return the result of the invocable js engine
 	 */
-	private static Object scriptIt(String script) throws ScriptException {
+	private static Invocable scriptIt(String script) throws ScriptException {
 		
 		ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
 		
@@ -94,11 +102,11 @@ public class MainDriver {
 		// System.out.println(fac.getLanguageName());
 		// });
 		
-		ScriptEngine jsEngine = scriptEngineManager.getEngineByName("js");
+		ScriptEngine jsEngine = scriptEngineManager.getEngineByName(NASHORN);
 		
-		Object result = jsEngine.eval(script);
+		jsEngine.eval(script);
 		
-		return result;
+		return (Invocable) jsEngine;
 	}
 	
 	/**
@@ -223,6 +231,157 @@ public class MainDriver {
 				os.close();
 			}
 		});
+		
+		// attack the opponent
+		server.createContext("/attack", new HttpHandler() {
+			
+			@Override
+			public void handle(HttpExchange t) throws IOException {
+				
+				System.out.println("Computing the attack");
+				
+				StringBuffer sBuffer = new StringBuffer();
+				
+				try (BufferedReader br = new BufferedReader(new InputStreamReader(t.getRequestBody()))) {
+					
+					String line = null;
+					
+					while (null != (line = br.readLine())) {
+						
+						sBuffer.append(line);
+					}
+				} catch (Exception e) {
+					
+					e.printStackTrace();
+				}
+				
+				String[] requestBodySplits = sBuffer.toString().split("\\&");
+				
+				String hostNamePart = URLDecoder.decode(requestBodySplits[0], "UTF-8").split("=")[1];
+				String portPart = URLDecoder.decode(requestBodySplits[1], "UTF-8").split("=")[1];
+				
+				System.out.println("Attacking agent at :: " + hostNamePart + ":" + portPart);
+				
+				// create the serializable object and stream it to the passed in
+				// agent
+				createSerializedObject(jsFilePath);
+				
+				// send the object to the partner agent by desrializing it
+				URL url = new URL("http://" + hostNamePart + ":" + portPart + "/receive");
+				
+				System.out.println("Initiating attack...");
+				
+				HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+				
+				connection.setRequestMethod("POST");
+				connection.setDoOutput(true);
+				
+				System.out.println("Logging:: Attack object :: " + sObject.toString());
+				
+				// send the HTTP request
+				try (ObjectOutputStream out = new ObjectOutputStream(connection.getOutputStream())) {
+					
+					out.writeObject(sObject);
+				} catch (Exception e) {
+					
+					e.printStackTrace();
+				}
+				
+				System.out.println("Awaiting response...");
+				
+				// get the response from agent
+				try (BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+					
+					String decodedString;
+					
+					while ((decodedString = in.readLine()) != null) {
+						
+						System.out.println("Attack stats :: " + decodedString);
+					}
+				} catch (Exception e) {
+					
+					e.printStackTrace();
+				}
+				
+				String response = "Attack turn over!";
+				
+				t.sendResponseHeaders(200, response.length());
+				
+				OutputStream os = t.getResponseBody();
+				
+				os.write(response.getBytes());
+				
+				os.close();
+			}
+		});
+		
+		// receive the attack
+		server.createContext("/receive", new HttpHandler() {
+			
+			@Override
+			public void handle(HttpExchange t) throws IOException {
+				
+				System.out.println("Receiving attack from :: " + t.getRequestURI());
+				
+				Boolean flag = true;
+				Double dmg = 0.0;
+				
+				try (ObjectInputStream oin = new ObjectInputStream(t.getRequestBody())) {
+					
+					StandardLambdaObject receivedObject = (StandardLambdaObject) oin.readObject();
+					
+					// execute the js script
+					Invocable engine = scriptIt(receivedObject.getLambdaJSScript());
+					
+					dmg = (Double) engine.invokeFunction("computeDamage", 100, (new Random()).nextDouble());
+					
+					final Double damageDealt = dmg;
+					
+					// received attack
+					flag = agent.receiveAttack(() -> damageDealt);
+					
+					System.out.println("Damage received:: " + dmg);
+				} catch (Exception e) {
+					
+					e.printStackTrace();
+				}
+				
+				System.out.println("Your HP:: " + agent.getHp());
+				
+				String response = "";
+				
+				if (flag) {
+					
+					response = "Attack succeeded, damage dealt :: " + dmg.toString();
+				} else {
+					
+					response = "Attack missed! Try again...";
+				}
+				
+				boolean stopFlag = false;
+				
+				if (agent.getHp() <= 0) {
+					
+					response += "\n The agent at :: " + t.getLocalAddress() + " has been defeated, way to go dude!";
+					
+					stopFlag = true;
+				}
+				
+				t.sendResponseHeaders(200, response.length());
+				
+				OutputStream os = t.getResponseBody();
+				
+				os.write(response.toString().getBytes());
+				
+				os.close();
+				
+				// stops the server now that you have been defeated! :(
+				if (stopFlag) {
+					
+					server.stop(0);
+				}
+			}
+		});
 	}
 	
 	/**
@@ -276,6 +435,8 @@ public class MainDriver {
 		
 		// create the HTTP server
 		createHttpServer(host, port, args[2]);
+		
+		agent = new Agent(host);
 		
 		server.start();
 	}
