@@ -3,7 +3,7 @@
  * opponent. The `baseDamage` and `randomMultiplier` are mandatory and are set
  * randomly when the script executes.
  * 
- * To print stuff or display messages, you can use `println()` or `print()`
+ * To print stuff or display messages, you can use `print()`
  * 
  * @param baseDamage
  *            the baseDamage of the attack, a double
